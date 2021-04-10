@@ -28,7 +28,7 @@
 
 2. 依赖工具
 
-> Pycharm
+> Pycharm或者其他Python IDE
 >
 > Qt Designer工具
 >
