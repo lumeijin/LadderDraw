@@ -28,6 +28,20 @@ pip install -r requirements.txt
 python -m ladderdraw
 ```
 
+### 编程调用（纯计算 API）
+
+计算层 `compute_stages` 不依赖 PyQt，可在脚本 / Jupyter 中直接使用：
+
+```python
+from ladderdraw import compute_stages
+
+r = compute_stages(alpha=2.16, rl_a=0.745, rl_b=0.24,
+                   ql_a=-1, ql_b=0.865, w=0.046)
+print(r.total_stages)   # 14.286
+print(r.full_stages)    # 14
+print(len(r.steps))     # 15（阶梯几何，可用于自行绘图）
+```
+
 ### 操作说明
 
 1. 在左侧面板输入 **相平衡线 α**、**精馏线 a/b**、**q 线 a/b** 和 **塔釜浓度 w**
@@ -74,7 +88,18 @@ PyQt5 与 matplotlib 结合，构建桌面应用：
 ### 开发工具
 
 - Python 3
-- Qt Designer（UI 设计）
+- 手工维护 ui.py（不再使用 Qt Designer）
+
+### 打包为单文件可执行程序
+
+用 PyInstaller 打包成可双击运行的 `.exe`，便于分发给未装 Python 的同学：
+
+```bash
+pip install pyinstaller
+pyinstaller LadderDraw.spec      # 产物：dist/LadderDraw.exe
+```
+
+需要自定义 exe 图标时，把 `.ico` 文件放到 `resources/icons/huagong.ico` 即可生效。
 
 ## License
 

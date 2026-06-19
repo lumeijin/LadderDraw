@@ -99,6 +99,20 @@ class StageResult:
     w_point: XY                           # 塔釜浓度点 (w, w)
 
 
+def _validate_inputs(alpha, rl_a, rl_b, ql_a, ql_b, w):
+    """对参数做物理合理性预检，失败时抛 :class:`NoSolutionError`（带中文提示）。
+
+    目的是把退化参数挡在重型符号计算之前，并给出人话提示，
+    而不是暴露 sympy 内部的方程信息。
+    """
+    if alpha <= 1:
+        raise NoSolutionError(
+            f"相对挥发度 α = {alpha} 应大于 1（α ≤ 1 时无法用此法分离）。"
+        )
+    if not (0 < w < 1):
+        raise NoSolutionError(f"塔釜浓度 w = {w} 应在 (0, 1) 之间。")
+
+
 def compute_stages(alpha, rl_a, rl_b, ql_a, ql_b, w):
     """计算 McCabe-Thiele 理论塔板数（纯函数，无 Qt 依赖）。
 
@@ -107,8 +121,10 @@ def compute_stages(alpha, rl_a, rl_b, ql_a, ql_b, w):
     :param ql_a, ql_b: q 线 y = a*x + b 的系数
     :param w: 塔釜（残液）摩尔分数 xW
     :return: :class:`StageResult`
-    :raises NoSolutionError: 当某条交点在 [0, 1] 内无解（参数不合理）时。
+    :raises NoSolutionError: 当参数不合理（α ≤ 1、w 越界、操作线无交点等）时。
     """
+    _validate_inputs(alpha, rl_a, rl_b, ql_a, ql_b, w)
+
     # ---- 曲线表达式 ----
     pel = alpha * t / (1 + (alpha - 1) * t)   # 相平衡线
     rl = rl_a * t + rl_b                      # 精馏线
@@ -116,9 +132,19 @@ def compute_stages(alpha, rl_a, rl_b, ql_a, ql_b, w):
     dl = t                                    # 对角线 y = x
 
     # ---- 关键交点 ----
-    xd = solve_in_unit(dl - rl)               # 馏出液组成（对角线 ∩ 精馏线）
+    try:
+        xd = solve_in_unit(dl - rl)           # 馏出液组成（对角线 ∩ 精馏线）
+    except NoSolutionError:
+        raise NoSolutionError(
+            "精馏线与对角线在 [0, 1] 内无交点，请检查精馏线参数 a、b。"
+        ) from None
     d_point = (xd, xd)
-    qx = solve_in_unit(rl - ql)               # 精馏线 ∩ q 线
+    try:
+        qx = solve_in_unit(rl - ql)           # 精馏线 ∩ q 线
+    except NoSolutionError:
+        raise NoSolutionError(
+            "精馏线与 q 线在 [0, 1] 内无交点，请检查 q 线参数 a、b。"
+        ) from None
     qy = ql.evalf(subs={t: qx})
     q_point = (qx, qy)
     w_point = (w, w)

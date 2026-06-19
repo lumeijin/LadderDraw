@@ -1,0 +1,6 @@
+# 统一换行符为 LF（与项目编码规范一致），并消除 Git autocrlf 的 CRLF 警告
+* text=auto eol=lf
+
+# 二进制资源：不做换行转换 / 差异计算
+*.png binary
+*.ico binary
