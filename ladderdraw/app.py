@@ -14,7 +14,7 @@ import numpy as np
 
 
 # 项目根目录（package 上一层）
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_RESOURCE_DIR = Path(__file__).resolve().parent.parent / "resources"
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):
@@ -23,7 +23,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setupUi(self)
 
         # 设置窗口图标
-        icon_path = _PROJECT_ROOT / "icons" / "huagong.png"
+        icon_path = _RESOURCE_DIR / "icons" / "huagong.png"
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
 
