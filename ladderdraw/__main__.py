@@ -10,7 +10,9 @@ import sys
 from PyQt5.QtCore import QCoreApplication, Qt
 from PyQt5.QtWidgets import QApplication
 
-from .app import MainWindow
+# 用绝对导入：`python -m ladderdraw` 与 PyInstaller 冻结（入口被当作顶层
+# __main__ 运行、无包上下文）两种场景下都能正常解析。
+from ladderdraw.app import MainWindow
 
 
 def main():

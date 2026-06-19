@@ -1,6 +1,6 @@
 # LadderDraw
 
-一个化工小工具，用于绘制化工原理中常见的精馏塔塔板阶梯图（McCabe-Thiele 图）。
+LadderDraw是面向化学工程与工艺及相关专业本科生的一个小工具，用于绘制化工原理中常见的精馏塔塔板阶梯图（McCabe-Thiele 图）。
 
 ![软件截图](resources/LadderDraw.png)
 
@@ -90,14 +90,16 @@ PyQt5 与 matplotlib 结合，构建桌面应用：
 - Python 3
 - 手工维护 ui.py（不再使用 Qt Designer）
 
-### 打包为单文件可执行程序
+### 打包为桌面应用
 
-用 PyInstaller 打包成可双击运行的 `.exe`，便于分发给未装 Python 的同学：
+用 PyInstaller 打包（onedir 模式：启动快、杀软误报少），便于分发给未装 Python 的同学：
 
 ```bash
 pip install pyinstaller
-pyinstaller LadderDraw.spec      # 产物：dist/LadderDraw.exe
+pyinstaller LadderDraw.spec      # 产物：dist/LadderDraw/ 文件夹
 ```
+
+分发时把 `dist/LadderDraw/` 整个文件夹压成 zip 发给同学，解压后双击其中的 `LadderDraw.exe` 即可。
 
 需要自定义 exe 图标时，把 `.ico` 文件放到 `resources/icons/huagong.ico` 即可生效。
 

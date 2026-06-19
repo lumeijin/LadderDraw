@@ -1,22 +1,23 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""LadderDraw PyInstaller 打包配置（onefile -> 单个可执行文件，便于分发）。
+"""LadderDraw PyInstaller 打包配置（onedir -> 文件夹分发）。
 
 用法:
     pip install pyinstaller
     pyinstaller LadderDraw.spec
 
 产物:
-    dist/LadderDraw.exe        (Windows)
-    dist/LadderDraw            (macOS / Linux)
+    dist/LadderDraw/              <- 整个文件夹即程序；分发时压成 zip
+      ├── LadderDraw.exe          <- 双击运行的入口
+      └── _internal/              <- 依赖（Qt / matplotlib / sympy / 资源等）
 
-说明:
-    * onefile 模式：所有依赖 + resources/ 打进一个文件，启动稍慢但分发最简单。
-    * 资源通过 app._resource_dir() 中的 sys._MEIPASS 定位，故 datas 里
-      必须把 resources/ 放到运行时顶层 'resources' 路径下。
-    * 想要启动更快的 onedir 模式：把 EXE(...) 内的 a.binaries 与 a.datas
-      移到 COLLECT(...) 中（参见 PyInstaller 文档）。
-    * Windows 下 exe 图标需要 .ico；仓库目前只有 png/svg，缺省时自动忽略。
-      如需自定义图标，把 huagong.ico 放到 resources/icons/ 下即可生效。
+为什么选 onedir 而不是 onefile（单 exe）:
+    * 启动更快 —— onefile 每次启动都要先把自身解压到临时目录，onedir 直接运行。
+    * 杀软误报更少 —— 单文件 exe 更常被 Windows Defender / 各类杀软误判。
+    * 分发方式：把 dist/LadderDraw/ 整个文件夹压缩成 zip 发给同学，解压后
+      双击其中的 LadderDraw.exe 即可。
+
+切换回 onefile（单 exe）: 删掉下方 COLLECT(...)，并把 a.binaries / a.datas
+放回 EXE(...) 内、同时设 exclude_binaries=False。
 """
 from pathlib import Path
 
@@ -30,7 +31,7 @@ a = Analysis(
     ['ladderdraw/__main__.py'],
     pathex=[str(ROOT)],
     binaries=[],
-    datas=[(str(RESOURCES), 'resources')],   # 整个 resources/ -> 运行时 resources/
+    datas=[(str(RESOURCES), 'resources')],   # 运行时定位 resources/（见 app._resource_dir）
     hiddenimports=[
         'matplotlib.backends.backend_qt5agg',
     ],
@@ -45,14 +46,22 @@ pyz = PYZ(a.pure, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,                    # onedir：依赖不塞进 exe，交给 COLLECT
     name='LadderDraw',
     debug=False,
     strip=False,
     upx=True,
-    runtime_tmpdir=None,
     console=False,                            # GUI 程序：不弹控制台
     icon=str(ICON) if ICON.exists() else None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='LadderDraw',                        # 产物目录: dist/LadderDraw/
 )

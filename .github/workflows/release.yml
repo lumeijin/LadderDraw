@@ -1,0 +1,57 @@
+# 打 tag 时自动在 Windows 上打包 LadderDraw.exe 并发布 GitHub Release
+# 触发：推送 v 开头的 tag（如 v0.1.0），或在 Actions 页手动运行
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:           # 允许在 GitHub 网页手动触发
+
+permissions:
+  contents: write              # 创建 Release / 上传资源需要写权限
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest    # 目标用户在 Windows，直接用 Windows runner 出 exe
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: 运行测试（失败则中止发布）
+        run: python -m unittest discover -s tests
+
+      - name: PyInstaller 打包（onedir，产物为 dist/LadderDraw 文件夹）
+        run: pyinstaller --noconfirm LadderDraw.spec
+
+      - name: 压缩分发文件夹为 zip（保留 LadderDraw/ 顶层目录）
+        shell: pwsh
+        working-directory: dist
+        run: 7z a -tzip "../LadderDraw-${{ github.ref_name }}-windows.zip" LadderDraw
+
+      - name: 上传构建产物（Actions 页可下载，便于排查）
+        uses: actions/upload-artifact@v4
+        with:
+          name: LadderDraw-windows-zip
+          path: LadderDraw-${{ github.ref_name }}-windows.zip
+          if-no-files-found: error
+
+      - name: 创建 Release 并附加 zip
+        if: startsWith(github.ref, 'refs/tags/')   # 仅 tag 推送时发 Release；手动触发只出 artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          files: LadderDraw-${{ github.ref_name }}-windows.zip
+          generate_release_notes: true   # 自动按 commit/PR 生成更新说明
