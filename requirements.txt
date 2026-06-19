@@ -1,0 +1,4 @@
+PyQt5>=5.13.0
+matplotlib>=3.0
+sympy>=1.5
+numpy>=1.16
