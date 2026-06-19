@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
-
-# Form implementation generated from reading ui file 'ui.ui'
+# File  : ui.py
+# Author: Meijin Lu
 #
-# Created by: PyQt5 UI code generator 5.13.0
-#
-# WARNING! All changes made in this file will be lost!
+# 主窗口界面定义。已从 .ui 手工迁移并继续手工维护，
+# 不再由 pyuic 自动生成 —— 可直接编辑本文件。
 
 
 from PyQt5 import QtCore, QtGui, QtWidgets

@@ -2,19 +2,30 @@
 # File  : app.py
 # Author: Meijin Lu
 # Date  : 2021/4/6
+"""主窗口控制器：读取参数 -> 调用 core.compute_stages -> 绘制结果。"""
+import sys
 from pathlib import Path
 
-from PyQt5.QtCore import pyqtSlot, Qt
-from PyQt5.QtWidgets import QMainWindow, QMessageBox
-from PyQt5.QtGui import QIcon
-from sympy import Interval, solveset
-from .ui import Ui_MainWindow
-from .canvas import *
 import numpy as np
+from PyQt5.QtCore import pyqtSlot
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import QMainWindow, QMessageBox
+
+from .core import NoSolutionError, compute_stages, t
+from .ui import Ui_MainWindow
 
 
-# 项目根目录（package 上一层）
-_RESOURCE_DIR = Path(__file__).resolve().parent.parent / "resources"
+def _resource_dir():
+    """定位 resources/ 目录；兼容源码运行与 PyInstaller 冻结环境。"""
+    if getattr(sys, 'frozen', False):
+        # PyInstaller onefile：资源被解包到临时目录 _MEIPASS/resources
+        base = Path(sys._MEIPASS)
+    else:
+        base = Path(__file__).resolve().parent.parent
+    return base / "resources"
+
+
+_RESOURCE_DIR = _resource_dir()
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):
@@ -28,20 +39,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.setWindowIcon(QIcon(str(icon_path)))
 
         self.txt0.setFocus()
-        # 后续一定要更新下面的值
-        self.d_point = Point(0.99, 0.99)
-        self.w_point = Point(0.01, 0.01)
-        self.q_point = Point(0.5, 0.5)
-        # 初始化对角线(diagonal line), 相平衡线, 精馏线, 提馏线, q线的方程
-        self.dl = StraightLine(1, 0).func()
-        self.pel = None
-        self.rl = None
-        self.sl = None
-        self.ql = None
+        self._result = None  # 最近一次 compute_stages 的结果（StageResult）
 
         # 对齐左侧参数标签（α, a, b, w），使输入框上下对齐
         for lbl in [self.label_8, self.label_3, self.label_4,
-                     self.label_6, self.label_7, self.label_10]:
+                    self.label_6, self.label_7, self.label_10]:
             lbl.setMinimumWidth(28)
 
         # 添加简单的样式美化
@@ -82,212 +84,114 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     @pyqtSlot()
     def on_pushButton_start_clicked(self):
-        """
-        整个操作中最重要的函数
-        :return:
-        """
-        # 获取输入框中的信息, 收到的值不为空则表明没有出错
+        """读取参数 -> 计算 -> 绘制。"""
         txt = self.get_txt()
-        if txt is not None:
-            # 相平衡线对象, 一个指针, 这里确定它的alpha值
-            pel = PhaseQuilibriumLine(txt[0])
-            self.pel = pel.func()
-            # 精馏线对象, 指针, 确定a和b
-            rl = StraightLine(txt[1], txt[2])
-            self.rl = rl.func()
-            # q线对象, 指针, 确定a和b
-            ql = StraightLine(txt[3], txt[4])
-            self.ql = ql.func()
-            w = txt[5]
-            self.w_point = Point(w, w)
-            # 求解提馏线
-            self.d_point = self.get_common_point(self.dl, self.rl)
-            self.q_point = self.get_common_point(self.rl, self.ql)
-            qx = self.q_point.get_x()
-            qy = self.q_point.get_y()
-            self.sl = w + (t - w) * (qy - w) / (qx - w)
-            # 开始绘制
-            self.ladder_draw()
+        if txt is None:
+            return
+        alpha, rl_a, rl_b, ql_a, ql_b, w = txt
+        try:
+            self._result = compute_stages(alpha, rl_a, rl_b, ql_a, ql_b, w)
+        except NoSolutionError as exc:
+            QMessageBox.warning(self, '警告', f'参数不合理，无法求解：\n{exc}')
+            return
+        self.ladder_draw()
 
     @pyqtSlot()
     def on_pushButton_clear_clicked(self):
+        """清空图表与输入框。"""
         self.matplotlibwidget.mpl.axes.cla()
-        self.txt0.clear()
-        self.txt1.clear()
-        self.txt2.clear()
-        self.txt3.clear()
-        self.txt4.clear()
-        self.txt5.clear()
+        self.matplotlibwidget.mpl.draw()
+        for edit in (self.txt0, self.txt1, self.txt2,
+                     self.txt3, self.txt4, self.txt5):
+            edit.clear()
         self.txt0.setFocus()
 
     def get_txt(self):
-        """
-        判断数据, 获取数据
-        在本版本的pyqt5中
-        QLineEdit获取文本的方法
-        Text()--->text()
-        """
-        value_list = (self.txt0.text(),
-                      self.txt1.text(),
-                      self.txt2.text(),
-                      self.txt3.text(),
-                      self.txt4.text(),
-                      self.txt5.text())
-        txt = []
+        """读取并校验 6 个输入框，返回 float 元组；非法则弹警告并返回 None。"""
+        value_list = (self.txt0.text(), self.txt1.text(), self.txt2.text(),
+                      self.txt3.text(), self.txt4.text(), self.txt5.text())
+        parsed = []
         for item in value_list:
-            # 判断不为空, 且字符串为数字
             if self.is_number(item):
-                txt.append(eval(item))
+                parsed.append(float(item))
             else:
                 QMessageBox.warning(self, '警告', '请检查输入')
                 return None
-        return tuple(txt)
+        return tuple(parsed)
 
-    def is_number(self, s):
-        """
-        为空则直接返回False
-        不为空判断是否为数字
-        """
-        if s is not None:
-            try:
-                float(s)
-                return True
-            except ValueError:
-                pass
-            try:
-                import unicodedata
-                unicodedata.numeric(s)
-                return True
-            except (TypeError, ValueError):
-                pass
+    @staticmethod
+    def is_number(s):
+        """为空返回 False；否则判断是否为数字（含 Unicode 数字字符）。"""
+        if s is None:
             return False
-        else:
+        try:
+            float(s)
+            return True
+        except ValueError:
+            pass
+        try:
+            import unicodedata
+            unicodedata.numeric(s)
+            return True
+        except (TypeError, ValueError):
             return False
 
-    # ---------- 绘制方法 ----------
+    # ---------- 绘制 ----------
 
     def ladder_draw(self):
-        """
-        只要没有到达w_point,
-        从d_point开始, 在pel和rl之间画阶梯,
-        画到q_point时, 改为在pel和sl之间画阶梯。
-        :return:
-        """
-        self.matplotlibwidget.mpl.axes.cla()
-        # 画布 mpl
+        """依据 self._result 绘制阶梯图。"""
+        r = self._result
         mpl = self.matplotlibwidget.mpl
-        # 画图区域 axes
         axes = mpl.axes
+        axes.cla()
 
         # 固定图表参数
-        xfont = 10
-        yfont = 10
         main_lw = 1.2
         step_lw = 1.8
         step_color = "r"
 
         axes.set_title("塔板阶梯图", fontsize=12, fontweight="bold")
-        axes.set_ylabel("Y", fontsize=yfont)
-        axes.set_xlabel("X", fontsize=xfont)
+        axes.set_xlabel("X", fontsize=10)
+        axes.set_ylabel("Y", fontsize=10)
         axes.tick_params(axis='both', labelsize=9)
         axes.set_xlim(0, 1)
         axes.set_ylim(0, 1)
         axes.grid(True, linestyle=":", alpha=0.4)
 
-        # 生成 x 轴数据
         range_x = np.linspace(0, 1, 100)
 
-        # 画出对角线 (Diagonal)
+        # 对角线 (Diagonal)
         axes.plot([0, 1], [0, 1], color="black", linewidth=main_lw,
                   label="Diagonal")
 
-        # 画出相平衡线 (Equilibrium Line)
-        range_pel_y = np.array([self.pel.evalf(subs={t: i}) for i in range_x])
-        axes.plot(range_x, range_pel_y, color="black", linewidth=main_lw,
-                  linestyle="--", label="Equilibrium Line")
+        # 相平衡线 / 精馏线 / 提馏线 / q 线
+        curves = [
+            (r.pel, "black", "--", "Equilibrium Line"),
+            (r.rl, "green", "-", "Rectifying Line"),
+            (r.sl, "blue", "-", "Stripping Line"),
+            (r.ql, "orange", "-.", "q-Line"),
+        ]
+        for expr, color, style, label in curves:
+            ys = np.array([float(expr.evalf(subs={t: i})) for i in range_x])
+            axes.plot(range_x, ys, color=color, linewidth=main_lw,
+                      linestyle=style, label=label)
 
-        # 画出精馏线 (Rectifying Line)
-        range_rl_y = np.array([self.rl.evalf(subs={t: i}) for i in range_x])
-        axes.plot(range_x, range_rl_y, color="green", linewidth=main_lw,
-                  label="Rectifying Line")
-
-        # 画出提馏线 (Stripping Line)
-        range_sl_y = np.array([self.sl.evalf(subs={t: i}) for i in range_x])
-        axes.plot(range_x, range_sl_y, color="blue", linewidth=main_lw,
-                  label="Stripping Line")
-
-        # 画出 q 线 (q-Line)
-        if self.ql is not None:
-            range_ql_y = np.array([self.ql.evalf(subs={t: i}) for i in range_x])
-            axes.plot(range_x, range_ql_y, color="orange", linewidth=main_lw,
-                      linestyle="-.", label="q-Line")
-
-        # 添加图例（放置在右侧垂直居中位置）
         axes.legend(fontsize=8, loc="center right")
-        mpl.draw()
 
-        # 画出阶梯（画法保持原样），并用小数方式计算理论塔板数
-        full_stages = 0
+        # 阶梯（横向到相平衡线，纵向到操作线）
+        for start, mid, end in r.steps:
+            axes.plot([float(start[0]), float(mid[0])],
+                      [float(start[1]), float(mid[1])],
+                      color=step_color, linewidth=step_lw)
+            axes.plot([float(mid[0]), float(end[0])],
+                      [float(mid[1]), float(end[1])],
+                      color=step_color, linewidth=step_lw)
 
-        start_point = self.d_point
-        x_eq = list(solveset(self.pel - start_point.get_y(), t, Interval(0, 1)))[0]
-        y = start_point.get_y()
-        middle_point = Point(x_eq, y)
-        end_point = Point(x_eq, self.rl.evalf(subs={t: x_eq}))
-        self.one_step(start_point, middle_point, end_point, step_color, step_lw)
-        full_stages += 1
-
-        while True:
-            start_point = end_point
-            x_prev = float(start_point.get_x())   # 记下本步起点
-            x_eq = list(solveset(self.pel - start_point.get_y(), t, Interval(0, 1)))[0]
-            y = start_point.get_y()
-
-            # 仍然画完整的阶梯（视觉不变）
-            middle_point = Point(x_eq, y)
-            if x_eq > self.q_point.get_x():
-                end_point = Point(x_eq, self.rl.evalf(subs={t: x_eq}))
-            else:
-                end_point = Point(x_eq, self.sl.evalf(subs={t: x_eq}))
-            self.one_step(start_point, middle_point, end_point, step_color, step_lw)
-
-            # 判断是否越过了塔釜浓度 w
-            if x_eq < self.w_point.get_x():
-                xw = float(self.w_point.get_x())
-                fraction = (x_prev - xw) / (x_prev - float(x_eq)) if abs(x_prev - float(x_eq)) > 1e-10 else 0.0
-                total_stages = full_stages + fraction
-                break
-
-            full_stages += 1
-
-        # 在图表底部中央显示理论塔板数（保留 1 位小数）
-        axes.text(0.5, 0.04, f"理论塔板数 = {total_stages:.1f}",
+        # 理论塔板数（保留 1 位小数）
+        axes.text(0.5, 0.04, f"理论塔板数 = {r.total_stages:.1f}",
                   transform=axes.transAxes, fontsize=11, fontweight="bold",
                   ha="center", va="bottom",
                   bbox=dict(facecolor="lightyellow", edgecolor="#cc8800",
                             boxstyle="round,pad=0.4", alpha=0.92))
-        mpl.draw()
 
-    def one_step(self, start_point, middle_point, end_point, color="r", lw=1.8):
-        # 画布 mpl
-        mpl = self.matplotlibwidget.mpl
-        # 画图区域 axes
-        axes = mpl.axes
-        # 横线
-        axes.plot([start_point.get_x(), middle_point.get_x()],
-                  [start_point.get_y(), middle_point.get_y()],
-                  color=color, linewidth=lw)
-        # 竖线
-        axes.plot([middle_point.get_x(), end_point.get_x()],
-                  [middle_point.get_y(), end_point.get_y()],
-                  color=color, linewidth=lw)
         mpl.draw()
-
-    def get_common_point(self, exp1, exp2):
-        """
-        :param : func1,func2两个函数表达式
-        :return: Point对象
-        """
-        x = list(solveset(exp1 - exp2, t, Interval(0, 1)))[0]
-        y = exp1.evalf(subs={t: x})
-        return Point(x, y)
